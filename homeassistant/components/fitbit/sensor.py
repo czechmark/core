@@ -100,6 +100,7 @@ FITBIT_RESOURCES_LIST = {
     "body/fat": ["Body Fat", PERCENTAGE, "human"],
     "body/weight": ["Weight", "", "human"],
     "devices/battery": ["Battery", None, None],
+    "devices/batteryLevel": ["Battery%", PERCENTAGE, None],
     "sleep/awakeningsCount": ["Awakenings Count", "times awaken", "sleep"],
     "sleep/efficiency": ["Sleep Efficiency", PERCENTAGE, "sleep"],
     "sleep/minutesAfterWakeup": ["Minutes After Wakeup", TIME_MINUTES, "sleep"],
@@ -283,7 +284,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
         for resource in config.get(CONF_MONITORED_RESOURCES):
 
             # monitor battery for all linked FitBit devices
-            if resource == "devices/battery":
+            if resource == "devices/battery" or resource == "devices/batteryLevel":
                 for dev_extra in registered_devs:
                     dev.append(
                         FitbitSensor(
@@ -418,7 +419,10 @@ class FitbitSensor(Entity):
         self.extra = extra
         self._name = FITBIT_RESOURCES_LIST[self.resource_type][0]
         if self.extra:
-            self._name = f"{self.extra.get('deviceVersion')} Battery"
+            if self.resource_type == "devices/battery":
+                self._name = f"{self.extra.get('deviceVersion')} Battery"
+            else:
+                self._name = f"{self.extra.get('deviceVersion')} Battery Level"
         unit_type = FITBIT_RESOURCES_LIST[self.resource_type][1]
         if unit_type == "":
             split_resource = self.resource_type.split("/")
@@ -451,7 +455,10 @@ class FitbitSensor(Entity):
     @property
     def icon(self):
         """Icon to use in the frontend, if any."""
-        if self.resource_type == "devices/battery" and self.extra:
+        if (
+            self.resource_type == "devices/batteryLevel"
+            or self.resource_type == "devices/battery"
+        ) and self.extra:
             battery_level = BATTERY_LEVELS[self.extra.get("battery")]
             return icon_for_battery_level(battery_level=battery_level, charging=None)
         return f"mdi:{FITBIT_RESOURCES_LIST[self.resource_type][2]}"
@@ -471,13 +478,16 @@ class FitbitSensor(Entity):
 
     def update(self):
         """Get the latest data from the Fitbit API and update the states."""
-        if self.resource_type == "devices/battery" and self.extra:
+        if self.extra:
             registered_devs = self.client.get_devices()
             device_id = self.extra.get("id")
             self.extra = list(
                 filter(lambda device: device.get("id") == device_id, registered_devs)
             )[0]
-            self._state = self.extra.get("battery")
+            if self.resource_type == "devices/battery":
+                self._state = self.extra.get("battery")
+            elif self.resource_type == "devices/batteryLevel":
+                self._state = self.extra.get("batteryLevel")
 
         else:
             container = self.resource_type.replace("/", "-")
